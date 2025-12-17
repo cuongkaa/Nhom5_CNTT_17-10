@@ -38,7 +38,7 @@ Sau khi chạy thuật toán Apriori với ngưỡng tối ưu (Support > 1.5%, 
 
 ### 1. Phân bổ các luật tìm được
 
-![Biểu đồ phân tán Support vs Confidence](Scatter Plot.png)
+![Biểu đồ phân tán Support vs Confidence](Scatter_Plot.png)
 
 **Quan sát:**
 - Tổng số luật tìm thấy: **516 luật**.
