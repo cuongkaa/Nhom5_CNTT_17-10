@@ -1,77 +1,97 @@
-import papermill as pm
+# run_papermill.py
 import os
+import papermill as pm
+from datetime import datetime
+from pathlib import Path
 
-os.makedirs("notebooks/runs", exist_ok=True)
+# Lấy đường dẫn gốc tuyệt đối của dự án (nơi chứa file run_papermill.py này)
+PROJECT_ROOT = Path(__file__).parent.resolve()
 
-# run_preprocessing_and_eda.py
-pm.execute_notebook(
-    "notebooks/preprocessing_and_eda.ipynb",
-    "notebooks/runs/preprocessing_and_eda_run.ipynb",
-    parameters=dict(
-        DATA_PATH="data/raw/online_retail.csv",
-        COUNTRY="United Kingdom",
-        OUTPUT_DIR="data/processed",
-        PLOT_REVENUE=False,         # tắt bớt plot khi chạy batch
-        PLOT_TIME_PATTERNS=False,
-        PLOT_PRODUCTS=False,
-        PLOT_CUSTOMERS=False,
-        PLOT_RFM=False,
-    ),
-    kernel_name="python3",
+# Định nghĩa các đường dẫn chuẩn xác
+DATA_RAW = PROJECT_ROOT / "data" / "raw" / "PRSA2017_Data_20130301-20170228.zip"
+DATA_PROCESSED = PROJECT_ROOT / "data" / "processed"
+NOTEBOOKS_DIR = PROJECT_ROOT / "notebooks"
+RUNS_DIR = NOTEBOOKS_DIR / "runs"
+
+# Tạo thư mục output
+os.makedirs(RUNS_DIR, exist_ok=True)
+os.makedirs(DATA_PROCESSED, exist_ok=True)
+
+ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+KERNEL = "python3"
+
+print(f"🚀 STARTING PIPELINE từ: {PROJECT_ROOT} 🚀\n")
+
+# Hàm chạy notebook chung để code gọn hơn
+def run_nb(input_name, output_name, params):
+    input_path = NOTEBOOKS_DIR / input_name
+    output_path = RUNS_DIR / output_name
+    
+    print(f"--- Running {input_name} ---")
+    try:
+        pm.execute_notebook(
+            str(input_path),
+            str(output_path),
+            parameters=params,
+            language="python",
+            kernel_name=KERNEL,
+            progress_bar=True,
+            cwd=str(NOTEBOOKS_DIR) # QUAN TRỌNG: Ép notebook chạy tại thư mục notebooks/
+        )
+        print(f"✅ Success.\n")
+    except Exception as e:
+        print(f"❌ Failed: {e}")
+        exit(1)
+
+# --------------------------------------------------------------------------
+# 1. Preprocessing
+# --------------------------------------------------------------------------
+run_nb(
+    "preprocessing_and_eda.ipynb",
+    f"1_preprocessing_eda_{ts}.ipynb",
+    dict(
+        USE_UCIMLREPO=False,
+        # Truyền đường dẫn tuyệt đối (String) để notebook không bị lạc
+        RAW_ZIP_PATH=str(DATA_RAW),
+        OUTPUT_CLEANED_PATH=str(DATA_PROCESSED / "cleaned.parquet"),
+        LAG_HOURS=[1, 3, 24],
+    )
 )
 
-# run_basket_preparation.py
-
-pm.execute_notebook(
-    "notebooks/basket_preparation.ipynb",
-    "notebooks/runs/basket_preparation_run.ipynb",
-    parameters=dict(
-        CLEANED_DATA_PATH="data/processed/cleaned_uk_data.csv",
-        BASKET_BOOL_PATH="data/processed/basket_bool.parquet",
-        INVOICE_COL="InvoiceNo",
-        ITEM_COL="Description",
-        QUANTITY_COL="Quantity",
-        THRESHOLD=1,
-    ),
-    kernel_name="python3",
+# --------------------------------------------------------------------------
+# 2. Regression
+# --------------------------------------------------------------------------
+run_nb(
+    "regression_modelling.ipynb",
+    f"2_regression_{ts}.ipynb",
+    dict(
+        USE_UCIMLREPO=False,
+        RAW_ZIP_PATH=str(DATA_RAW),
+        LAG_HOURS=[1, 3, 24],
+        HORIZON=1,
+        TARGET_COL="PM2.5",
+        OUTPUT_REG_DATASET_PATH=str(DATA_PROCESSED / "dataset_for_regression.parquet"),
+        CUTOFF="2017-01-01",
+        MODEL_OUT="regressor.joblib",
+        METRICS_OUT="regression_metrics.json",
+        PRED_SAMPLE_OUT="regression_predictions_sample.csv",
+    )
 )
 
-# Chạy Notebook Apriori Modelling
-pm.execute_notebook(
-    "notebooks/apriori_modelling.ipynb",
-    "notebooks/runs/apriori_modelling_run.ipynb",
-    parameters=dict(
-        BASKET_BOOL_PATH="data/processed/basket_bool.parquet",
-        RULES_OUTPUT_PATH="data/processed/rules_apriori_filtered.csv",
-
-        # Tham số Apriori
-        MIN_SUPPORT=0.01,
-        MAX_LEN=3,
-
-        # Generate rules
-        METRIC="lift",
-        MIN_THRESHOLD=1.0,
-
-        # Lọc luật
-        FILTER_MIN_SUPPORT=0.01,
-        FILTER_MIN_CONF=0.3,
-        FILTER_MIN_LIFT=1.2,
-        FILTER_MAX_ANTECEDENTS=2,
-        FILTER_MAX_CONSEQUENTS=1,
-
-        # Số luật để vẽ
-        TOP_N_RULES=20,
-
-        # Tắt plot khi chạy batch (bật = True nếu muốn xem hình)
-        PLOT_TOP_LIFT=False,
-        PLOT_TOP_CONF=False,
-        PLOT_SCATTER=False,
-        PLOT_NETWORK=False,
-        PLOT_PLOTLY_NETWORK=False,
-        PLOT_PLOTLY_SCATTER=False,  
-    ),
-    kernel_name="python3",
+# --------------------------------------------------------------------------
+# 3. ARIMA
+# --------------------------------------------------------------------------
+run_nb(
+    "arima_forecasting.ipynb",
+    f"3_arima_{ts}.ipynb",
+    dict(
+        RAW_ZIP_PATH=str(DATA_RAW),
+        STATION="Aotizhongxin",
+        VALUE_COL="PM2.5",
+        CUTOFF="2017-01-01",
+        P_MAX=3, Q_MAX=3, D_MAX=2, IC="aic",
+        ARTIFACTS_PREFIX="arima_pm25",
+    )
 )
 
-
-print("Đã chạy xong pipeline")
+print("🎉 PIPELINE FINISHED! 🎉")
